@@ -189,7 +189,7 @@ class XiaoMusicDevice:
         return await self._play(name=name, search_key=search_key)
 
     async def _check_and_download_music(self, name, search_key, allow_download):
-        """检查本地歌曲是否存在，如果不存在则根据参数决定是否下载
+        """检查本地歌曲是否存在，如果不存在则根据参数决定是否下载或在线搜索
 
         Args:
             name: 歌曲名称
@@ -212,8 +212,18 @@ class XiaoMusicDevice:
 
         # _play 的行为：检查配置决定是否下载
         if self.config.disable_download:
-            await self.do_tts(f"本地不存在歌曲{name}")
-            return False
+            # 禁用下载时，尝试使用在线搜索插件播放
+            self.log.info(f"[在线搜索] 禁用下载，尝试使用在线搜索插件播放: {name}")
+            try:
+                await self.xiaomusic.online_play(
+                    did=self.device_id,
+                    arg1=f"{search_key or name}|{name}"
+                )
+                return True
+            except Exception as e:
+                self.log.error(f"[在线搜索] 在线搜索失败: {e}")
+                await self.do_tts(f"本地不存在歌曲{name}")
+                return False
 
         # 下载歌曲
         await self.download(search_key, name)
