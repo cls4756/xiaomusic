@@ -314,7 +314,7 @@ class OnlineMusicService:
 
     async def _parse_keyword_with_ai(self, keyword):
         """
-        使用AI解析关键词，如果AI不可用则使用传统分割方式
+        使用AI解析关键词，根据识别类型采取不同的搜索策略
         Args:
             keyword: 原始关键词
         Returns:
@@ -344,16 +344,37 @@ class OnlineMusicService:
                 
                 result = await utils_analyze_music_command(**params)
 
-                if result and (result.get("name") or result.get("artist")):
+                # 根据识别类型采取不同的策略
+                ai_type = result.get("type", "unknown")
+                
+                if ai_type == "song":
+                    # 歌曲类型：使用歌曲名和歌手名搜索
                     song_name = result.get("name", "")
                     artist = result.get("artist", "")
-                    # 构建新的关键词
-                    # keyword = _build_keyword(song_name, artist)
-                    keyword = song_name
-                    self.log.info(f"[AI智能解析] ✓ AI分析成功 - 原始指令: '{params['command']}' → 歌曲: '{song_name}', 歌手: '{artist}'")
-                    return keyword, artist
+                    if song_name:
+                        self.log.info(f"[AI智能解析] ✓ 识别为歌曲 - 歌曲: '{song_name}', 歌手: '{artist}'")
+                        return song_name, artist
+                    else:
+                        self.log.info(f"[AI智能解析] ✗ 歌曲类型但未提取到歌曲名，使用原始关键词: '{keyword}'")
+                        return keyword, ""
+                
+                elif ai_type in ["artist", "album", "series"]:
+                    # 歌手/专辑/系列类型：使用关键词搜索，返回所有结果
+                    keyword_value = result.get("keyword", "") or result.get("artist", "")
+                    if keyword_value:
+                        type_name = {"artist": "歌手", "album": "专辑", "series": "系列"}
+                        self.log.info(f"[AI智能解析] ✓ 识别为{type_name.get(ai_type, '其他')} - 关键词: '{keyword_value}'")
+                        # 返回关键词作为搜索词，artist为空表示搜索所有结果
+                        return keyword_value, ""
+                    else:
+                        self.log.info(f"[AI智能解析] ✗ {type_name.get(ai_type, '其他')}类型但未提取到关键词，使用原始关键词: '{keyword}'")
+                        return keyword, ""
+                
                 else:
-                    self.log.info(f"[AI智能解析] ✗ AI未提取到有效信息，使用原始关键词: '{keyword}'")
+                    # 未知类型：使用原始关键词
+                    self.log.info(f"[AI智能解析] ✗ 未识别到有效信息，使用原始关键词: '{keyword}'")
+                    return keyword, ""
+                    
             except Exception as e:
                 self.log.error(f"[AI智能解析] ✗ AI调用异常: {e}")
         else:

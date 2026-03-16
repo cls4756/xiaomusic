@@ -10,19 +10,31 @@ import aiohttp
 
 log = logging.getLogger(__package__)
 
-# 简化的音乐分析提示，专注于快速提取
+# 改进的音乐分析提示，能识别歌曲、歌手、专辑等
 MUSIC_ANALYSIS_PROMPT = """
-你是一个音乐播放口令分析师，专门负责从用户指令中提取歌曲名和歌手名信息。
+你是一个音乐播放口令分析师，专门负责从用户指令中提取音乐信息并识别类型。
 
 任务要求：
-1. 识别用户指令中的歌曲名和歌手名
-2. 按照JSON格式返回结果：{"name": "歌曲名", "artist": "歌手名"}
-3. 如果只识别到歌曲名，返回：{"name": "歌曲名", "artist": ""}
-4. 如果只识别到歌手名，返回：{"name": "", "artist": "歌手名"}
-5. 如果识别出多个歌名名，返回：{"name": "", "artist": "歌手名1,歌手名2"}
-6. 如果都没有识别到，返回：{}
-7. 不要添加任何额外解释或文字，只返回JSON格式结果
-8. 特别要注意一些歌曲名称中包含'的'字的歌，不要识别错误了。如用户指令：你的答案，应返回：{"name": "你的答案", "artist": ""}
+1. 识别用户指令中的音乐信息类型和具体内容
+2. 按照JSON格式返回结果，包含以下字段：
+   - type: 识别的类型，可选值为 "song"(歌曲), "artist"(歌手), "album"(专辑), "series"(系列/合集), "unknown"(未知)
+   - name: 识别到的歌曲名（仅当type为song时有效）
+   - artist: 识别到的歌手名（当type为song时为原唱歌手，当type为artist时为空）
+   - keyword: 识别到的关键词（当type为artist/album/series时使用）
+
+3. 返回格式示例：
+   - 用户说"播放说好不哭" → {"type": "song", "name": "说好不哭", "artist": "周杰伦"}
+   - 用户说"播放周杰伦的歌" → {"type": "artist", "name": "", "artist": "周杰伦", "keyword": "周杰伦"}
+   - 用户说"播放说好不哭" (无法确定歌手) → {"type": "song", "name": "说好不哭", "artist": ""}
+   - 用户说"播放周杰伦" → {"type": "artist", "name": "", "artist": "", "keyword": "周杰伦"}
+   - 用户说"播放说好不哭专辑" → {"type": "album", "name": "", "artist": "", "keyword": "说好不哭"}
+   - 如果都没有识别到 → {"type": "unknown", "name": "", "artist": "", "keyword": ""}
+
+4. 重要规则：
+   - 不要添加任何额外解释或文字，只返回JSON格式结果
+   - 特别要注意一些歌曲名称中包含'的'字的歌，不要识别错误了
+   - 如果用户只说了歌曲名，尽量根据常识推断原唱歌手（如"说好不哭"应该是周杰伦）
+   - 如果无法确定歌手，artist字段留空
 """
 
 
@@ -128,7 +140,7 @@ async def analyze_music_command(
     temperature: float = 0.1,  # 更低的温度值以获得更一致、更快的结果
 ) -> dict[str, str]:
     """
-    快速分析音乐播放口令，提取歌曲名和歌手名
+    快速分析音乐播放口令，提取歌曲名、歌手名和识别类型
 
     Args:
         command: 用户的音乐播放指令
@@ -138,7 +150,7 @@ async def analyze_music_command(
         temperature: 控制输出随机性的参数（较低值保持一致性）
 
     Returns:
-        包含歌曲名和歌手名的字典，格式为 {"name": "歌曲名", "artist": "歌手名"}
+        包含分析结果的字典，格式为 {"type": "song/artist/album/series/unknown", "name": "歌曲名", "artist": "歌手名", "keyword": "关键词"}
     """
     import time
     start_time = time.time()
@@ -187,10 +199,12 @@ async def analyze_music_command(
                         json_str = content[start:end]
                         parsed_result = json.loads(json_str)
                         final_result = {
+                            "type": parsed_result.get("type", "unknown"),
                             "name": parsed_result.get("name", ""),
                             "artist": parsed_result.get("artist", ""),
+                            "keyword": parsed_result.get("keyword", ""),
                         }
-                        log.info(f"[AI分析] ✓ 解析成功 - 歌曲: '{final_result.get('name')}', 歌手: '{final_result.get('artist')}'")
+                        log.info(f"[AI分析] ✓ 解析成功 - 类型: '{final_result.get('type')}', 歌曲: '{final_result.get('name')}', 歌手: '{final_result.get('artist')}', 关键词: '{final_result.get('keyword')}'")
                         return final_result
                     else:
                         log.warning(f"[AI分析] ✗ JSON解析失败 - 无法从响应中提取JSON: {content}")
@@ -209,7 +223,7 @@ async def analyze_music_command(
         log.error(f"[AI分析] ✗ 未知错误 - 耗时: {elapsed_time:.2f}秒, 错误: {e}")
 
     log.info(f"[AI分析] 返回空结果")
-    return {}
+    return {"type": "unknown", "name": "", "artist": "", "keyword": ""}
 
 
 def format_openai_messages(conversation_history: list[str]) -> list[dict[str, str]]:
