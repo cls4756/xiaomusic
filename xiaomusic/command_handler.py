@@ -58,9 +58,16 @@ class CommandHandler:
             # 匹配命令
             opvalue, oparg = self.match_cmd(device, query, ctrl_panel)
             if not opvalue:
-                # 未匹配到命令，等待后检查是否需要重播
-                await asyncio.sleep(1)
-                await device.check_replay()
+                # 未匹配到命令，尝试调用在线搜索
+                self.log.info(f"[命令处理] 未匹配到命令，尝试调用在线搜索 - 查询: '{query}'")
+                try:
+                    await self.xiaomusic.online_play(did=did, arg1=query)
+                    return
+                except Exception as e:
+                    self.log.warning(f"[命令处理] 在线搜索失败: {e}")
+                    # 在线搜索失败，等待后检查是否需要重播
+                    await asyncio.sleep(1)
+                    await device.check_replay()
                 return
 
             # 执行命令
