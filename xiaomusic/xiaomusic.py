@@ -5,7 +5,7 @@ import os
 import re
 from logging.handlers import RotatingFileHandler
 
-from xiaomusic import __version__
+__version__ = "0.4.23"
 from xiaomusic.analytics import Analytics
 from xiaomusic.auth import AuthManager
 from xiaomusic.command_handler import CommandHandler
