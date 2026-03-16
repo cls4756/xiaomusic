@@ -31,7 +31,8 @@ MUSIC_ANALYSIS_PROMPT = """
    - 如果都没有识别到 → {"type": "unknown", "name": "", "artist": "", "keyword": ""}
 
 4. 重要规则：
-   - 不要添加任何额外解释或文字，只返回JSON格式结果
+   - 最后必须输出一个完整的JSON对象，格式如上所示
+   - 不要添加任何额外解释或文字在JSON之后
    - 特别要注意一些歌曲名称中包含'的'字的歌，不要识别错误了
    - 如果用户只说了歌曲名，尽量根据常识推断原唱歌手（如"说好不哭"应该是周杰伦）
    - 如果无法确定歌手，artist字段留空
@@ -193,36 +194,37 @@ async def analyze_music_command(
                 
                 if response.status == 200:
                     result = await response.json()
-                    # 处理不同的响应格式
                     choice = result["choices"][0]
-                    content = choice["message"].get("content")
+                    message = choice["message"]
                     
-                    # 如果 content 为空，尝试获取 reasoning 字段
-                    if not content:
-                        content = choice["message"].get("reasoning", "")
+                    # 尝试从多个字段获取内容
+                    content = message.get("content") or message.get("reasoning") or ""
                     
                     if not content:
                         log.warning(f"[AI分析] ✗ 响应为空 - 耗时: {elapsed_time:.2f}秒")
                         return {"type": "unknown", "name": "", "artist": "", "keyword": ""}
                     
-                    log.info(f"[AI分析] ✓ API调用成功 - 耗时: {elapsed_time:.2f}秒, 原始响应: {content}")
+                    log.info(f"[AI分析] ✓ API调用成功 - 耗时: {elapsed_time:.2f}秒, 原始响应长度: {len(content)}")
 
                     # 快速提取JSON部分
                     start = content.find("{")
                     end = content.rfind("}") + 1
                     if start != -1 and end != 0:
                         json_str = content[start:end]
-                        parsed_result = json.loads(json_str)
-                        final_result = {
-                            "type": parsed_result.get("type", "unknown"),
-                            "name": parsed_result.get("name", ""),
-                            "artist": parsed_result.get("artist", ""),
-                            "keyword": parsed_result.get("keyword", ""),
-                        }
-                        log.info(f"[AI分析] ✓ 解析成功 - 类型: '{final_result.get('type')}', 歌曲: '{final_result.get('name')}', 歌手: '{final_result.get('artist')}', 关键词: '{final_result.get('keyword')}'")
-                        return final_result
+                        try:
+                            parsed_result = json.loads(json_str)
+                            final_result = {
+                                "type": parsed_result.get("type", "unknown"),
+                                "name": parsed_result.get("name", ""),
+                                "artist": parsed_result.get("artist", ""),
+                                "keyword": parsed_result.get("keyword", ""),
+                            }
+                            log.info(f"[AI分析] ✓ 解析成功 - 类型: '{final_result.get('type')}', 歌曲: '{final_result.get('name')}', 歌手: '{final_result.get('artist')}', 关键词: '{final_result.get('keyword')}'")
+                            return final_result
+                        except json.JSONDecodeError as e:
+                            log.warning(f"[AI分析] ✗ JSON解析失败 - 错误: {e}, 内容: {json_str}")
                     else:
-                        log.warning(f"[AI分析] ✗ JSON解析失败 - 无法从响应中提取JSON: {content}")
+                        log.warning(f"[AI分析] ✗ 无法从响应中提取JSON")
                 else:
                     error_text = await response.text()
                     log.error(f"[AI分析] ✗ API调用失败 - 状态码: {response.status}, 耗时: {elapsed_time:.2f}秒, 错误: {error_text}")
