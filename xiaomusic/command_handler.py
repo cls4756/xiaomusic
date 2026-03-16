@@ -58,16 +58,39 @@ class CommandHandler:
             # 匹配命令
             opvalue, oparg = self.match_cmd(device, query, ctrl_panel)
             if not opvalue:
-                # 未匹配到命令，尝试调用在线搜索
-                self.log.info(f"[命令处理] 未匹配到命令，尝试调用在线搜索 - 查询: '{query}'")
-                try:
-                    await self.xiaomusic.online_play(did=did, arg1=query)
-                    return
-                except Exception as e:
-                    self.log.warning(f"[命令处理] 在线搜索失败: {e}")
-                    # 在线搜索失败，等待后检查是否需要重播
-                    await asyncio.sleep(1)
-                    await device.check_replay()
+                # 未匹配到命令，尝试用 AI 判断用户意图
+                self.log.info(f"[命令处理] 未匹配到命令，尝试用 AI 判断用户意图 - 查询: '{query}'")
+                
+                # 检查 AI 是否启用
+                ai_info = self.xiaomusic.online_music_service.js_plugin_manager.get_aiapi_info()
+                if ai_info.get("enabled", False) and ai_info.get("api_key", ""):
+                    try:
+                        from xiaomusic.utils.openai_utils import analyze_music_command
+                        
+                        params = {"command": query, "api_key": ai_info.get("api_key")}
+                        if "base_url" in ai_info:
+                            params["base_url"] = ai_info["base_url"]
+                        if "model" in ai_info:
+                            params["model"] = ai_info["model"]
+                        
+                        result = await analyze_music_command(**params)
+                        ai_type = result.get("type", "unknown")
+                        
+                        # 只有当 AI 识别为音乐相关类型时，才调用在线搜索
+                        if ai_type in ["song", "artist", "album", "series"]:
+                            self.log.info(f"[命令处理] ✓ AI 识别为音乐请求 - 类型: {ai_type}, 调用在线搜索")
+                            await self.xiaomusic.online_play(did=did, arg1=query)
+                            return
+                        else:
+                            self.log.info(f"[命令处理] ✗ AI 识别为非音乐请求 - 类型: {ai_type}")
+                    except Exception as e:
+                        self.log.warning(f"[命令处理] AI 判断失败: {e}")
+                else:
+                    self.log.info(f"[命令处理] AI 未启用，跳过意图判断")
+                
+                # AI 判断失败或未启用，等待后检查是否需要重播
+                await asyncio.sleep(1)
+                await device.check_replay()
                 return
 
             # 执行命令
