@@ -23,6 +23,14 @@ FROM base-${TARGETPLATFORM//\//-} AS builder
 # 配置 Alpine 国内源加快下载速度（使用阿里源）
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 
+# 配置国内 PyPI 源加快下载速度
+RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple && \
+    pip config set global.extra-index-url https://pypi.org/simple
+
+# 安装PDM
+RUN pip install -U pdm
+ENV PDM_CHECK_UPDATE=false
+
 # 安装构建依赖（Alpine 系统）
 RUN apk add --no-cache \
     build-base \
@@ -35,10 +43,6 @@ RUN apk add --no-cache \
     openjpeg-dev \
     tiff-dev \
     libwebp-dev
-
-# 安装PDM
-RUN pip install -U pdm
-ENV PDM_CHECK_UPDATE=false
 
 WORKDIR /app
 COPY pyproject.toml README.md package.json ./
