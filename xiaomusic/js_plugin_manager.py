@@ -956,7 +956,9 @@ class JSPluginManager:
             return title_score + artist_score + platform_bonus
 
         sorted_data = sorted(data_list, key=calculate_match_score, reverse=True)
-        self.log.info(f"排序后列表信息：：{sorted_data}")
+        # 只打印 title 和 artist，避免日志过长
+        simple_log = [{"title": item.get("title"), "artist": item.get("artist")} for item in sorted_data]
+        self.log.info(f"排序后列表信息：{simple_log}")
         if 0 < limit < len(sorted_data):
             sorted_data = sorted_data[:limit]
         result_data["data"] = sorted_data

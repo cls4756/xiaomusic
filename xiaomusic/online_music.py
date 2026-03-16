@@ -480,10 +480,28 @@ class OnlineMusicService:
                 top_one_list = await self._search_top_one(
                     result.get("data"), search_key, name
                 )
+                
+                # 获取所有搜索结果
+                all_search_results = result.get("data", [])
+                
+                # 将最匹配的歌曲放在最前面
+                if top_one_list and all_search_results:
+                    top_one = top_one_list[0]
+                    # 移除最匹配的歌曲（如果在列表中）
+                    filtered_results = [item for item in all_search_results 
+                                       if not (item.get("title") == top_one.get("title") and 
+                                              item.get("artist") == top_one.get("artist"))]
+                    # 最匹配的放在最前面
+                    ordered_results = [top_one] + filtered_results
+                    self.log.info(f"[在线播放] 将搜索结果添加到播放列表 - 最匹配: '{top_one.get('title')}', 总数: {len(ordered_results)}")
+                else:
+                    ordered_results = all_search_results
+                
                 list_name = "_online_play"
                 # 调用公共函数,处理歌曲信息 -> 添加歌单 -> 播放歌单
+                # 传入所有搜索结果，这样播放完最匹配的歌曲后会自动播放其他结果
                 return await self.push_music_list_play(
-                    did=did, song_list=top_one_list, list_name=list_name
+                    did=did, song_list=ordered_results, list_name=list_name
                 )
             else:
                 return {"success": False, "error": "未找到歌曲"}
