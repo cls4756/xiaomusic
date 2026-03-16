@@ -20,8 +20,8 @@ RUN echo ${TARGETPLATFORM//\//-} > /platform_id
 ARG TARGETPLATFORM
 FROM base-${TARGETPLATFORM//\//-} AS builder
 
-# 配置 Alpine 国内源加快下载速度
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tsinghua.edu.cn/g' /etc/apk/repositories
+# 配置 Alpine 国内源加快下载速度（使用阿里源）
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 
 # 安装构建依赖（Alpine 系统）
 RUN apk add --no-cache \
@@ -44,7 +44,7 @@ WORKDIR /app
 COPY pyproject.toml README.md package.json ./
 
 # 配置国内 PyPI 源加快下载速度
-RUN pip config set global.index-url https://pypi.tsinghua.edu.cn/simple && \
+RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple && \
     pip config set global.extra-index-url https://pypi.org/simple
 
 # 配置国内 npm 源
@@ -65,8 +65,8 @@ COPY xiaomusic.py .
 ARG TARGETPLATFORM
 FROM run-${TARGETPLATFORM//\//-} AS runner
 
-# 配置 Alpine 国内源
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tsinghua.edu.cn/g' /etc/apk/repositories
+# 配置 Alpine 国内源（使用阿里源）
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 
 # 安装运行时依赖（Alpine 系统）
 RUN apk add --no-cache \
