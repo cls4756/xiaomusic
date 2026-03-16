@@ -158,10 +158,15 @@ async def analyze_music_command(
     log.info(f"[AI分析] 开始调用大模型 - 指令: '{command}', 模型: {model}, API: {base_url}")
     
     try:
+        # 构建请求头，支持多种 API 格式
         headers = {
-            "Authorization": f"Bearer {api_key[:10]}...{api_key[-4:]}",  # 脱敏显示
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
+        
+        # 脱敏显示 API Key 用于日志
+        masked_key = f"{api_key[:10]}...{api_key[-4:]}" if len(api_key) > 14 else "***"
+        log.info(f"[AI分析] 使用 API Key: {masked_key}")
 
         # 准备请求数据
         data = {
@@ -188,7 +193,17 @@ async def analyze_music_command(
                 
                 if response.status == 200:
                     result = await response.json()
-                    content = result["choices"][0]["message"]["content"]
+                    # 处理不同的响应格式
+                    choice = result["choices"][0]
+                    content = choice["message"].get("content")
+                    
+                    # 如果 content 为空，尝试获取 reasoning 字段
+                    if not content:
+                        content = choice["message"].get("reasoning", "")
+                    
+                    if not content:
+                        log.warning(f"[AI分析] ✗ 响应为空 - 耗时: {elapsed_time:.2f}秒")
+                        return {"type": "unknown", "name": "", "artist": "", "keyword": ""}
                     
                     log.info(f"[AI分析] ✓ API调用成功 - 耗时: {elapsed_time:.2f}秒, 原始响应: {content}")
 
