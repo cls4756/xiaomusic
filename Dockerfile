@@ -41,6 +41,13 @@ ENV PDM_CHECK_UPDATE=false
 WORKDIR /app
 COPY pyproject.toml README.md package.json ./
 
+# 配置国内 PyPI 源加快下载速度
+RUN pip config set global.index-url https://pypi.tsinghua.edu.cn/simple && \
+    pip config set global.extra-index-url https://pypi.org/simple
+
+# 配置国内 npm 源
+RUN npm config set registry https://registry.npmmirror.com
+
 # 安装Python和Node.js依赖
 RUN pdm install --prod --no-editable -v
 RUN npm install --loglevel=verbose
