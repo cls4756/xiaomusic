@@ -561,10 +561,12 @@ class MusicLibrary:
             list: 匹配的音乐名称列表
         """
         if not self.config.enable_fuzzy_match:
-            self.log.debug("没开启模糊匹配")
+            self.log.info("[音乐搜索] 模糊匹配未开启")
             return []
 
         all_music_list = list(self.all_music.keys())
+        self.log.info(f"[音乐搜索] 在 {len(all_music_list)} 首歌曲中搜索 '{name}'，返回前 {n} 个结果")
+        
         real_names = find_best_match(
             name,
             all_music_list,
@@ -572,15 +574,20 @@ class MusicLibrary:
             n=n,
             extra_search_index=self._extra_index_search,
         )
+        
         if not real_names:
-            self.log.info(f"没找到歌曲【{name}】")
+            self.log.info(f"[音乐搜索] ✗ 未找到匹配歌曲 '{name}'")
             return []
-        self.log.info(f"根据【{name}】找到歌曲【{real_names}】")
+            
+        self.log.info(f"[音乐搜索] ✓ 找到 {len(real_names)} 首匹配歌曲: {real_names}")
+        
         if name in real_names:
+            self.log.info(f"[音乐搜索] 完全匹配，直接返回: '{name}'")
             return [name]
 
         # 音乐不在查找结果同时n大于1, 模糊匹配模式，扩大范围再找，最后保留随机 n 个
         if n > 1:
+            self.log.info(f"[音乐搜索] 扩大搜索范围，查找 {n * 2} 个结果并随机选择")
             real_names = find_best_match(
                 name,
                 all_music_list,
@@ -589,7 +596,8 @@ class MusicLibrary:
                 extra_search_index=self._extra_index_search,
             )
             random.shuffle(real_names)
-        self.log.info(f"没找到歌曲【{name}】")
+            self.log.info(f"[音乐搜索] 随机后返回前 {n} 首: {real_names[:n]}")
+            
         return real_names[:n]
 
     def find_real_music_list_name(self, list_name):
@@ -1056,9 +1064,11 @@ class MusicLibrary:
         Returns:
             tuple: (播放地址, 原始地址) - 网络音乐时可能有原始地址
         """
-        self.log.info(f"get_music_url name:{name}")
+        self.log.info(f"[URL获取] 开始获取歌曲 '{name}' 的播放地址")
         if self.is_web_music(name):
+            self.log.info(f"[URL获取] 歌曲类型: 网络音乐")
             return await self._get_web_music_url(name)
+        self.log.info(f"[URL获取] 歌曲类型: 本地音乐")
         return self._get_local_music_url(name), None
 
     async def _get_web_music_url(self, name):
@@ -1070,23 +1080,30 @@ class MusicLibrary:
         Returns:
             tuple: (播放地址, 原始地址)
         """
-        self.log.info("in _get_web_music_url")
         url = self.all_music[name]
-        self.log.info(f"get_music_url web music. name:{name}, url:{url}")
+        self.log.info(f"[URL获取] 网络音乐原始URL: {url}")
+        
+        is_radio = self.is_web_radio_music(name)
+        if is_radio:
+            self.log.info(f"[URL获取] 这是一个网络电台")
 
         # 需要通过API获取真实播放地址
         if self.is_need_use_play_music_api(name):
+            self.log.info(f"[URL获取] 需要通过API获取真实播放地址")
             url = await self._get_url_from_api(name, url)
             if not url:
+                self.log.error(f"[URL获取] ✗ 通过API获取播放地址失败")
                 return "", None
+            self.log.info(f"[URL获取] ✓ API返回的真实URL: {url}")
 
         # 是否需要代理
         if self.config.web_music_proxy or url.startswith("self://"):
-            # 判断是否为电台，传入 radio 参数
-            is_radio = self.is_web_radio_music(name)
+            self.log.info(f"[URL获取] 需要使用代理 (web_music_proxy={self.config.web_music_proxy})")
             proxy_url = self._get_proxy_url(url, is_radio=is_radio)
+            self.log.info(f"[URL获取] ✓ 生成代理URL: {proxy_url}")
             return proxy_url, url
 
+        self.log.info(f"[URL获取] ✓ 直接使用原始URL: {url}")
         return url, None
 
     async def _get_url_from_api(self, name, url):
@@ -1134,9 +1151,11 @@ class MusicLibrary:
         """
         filename = self.get_filename(name)
         self.log.info(
-            f"_get_local_music_url local music. name:{name}, filename:{filename}"
+            f"[URL获取] 本地音乐文件路径: {filename}"
         )
-        return self._get_file_url(filename)
+        url = self._get_file_url(filename)
+        self.log.info(f"[URL获取] ✓ 生成本地音乐URL: {url}")
+        return url
 
     def _get_file_url(self, filepath):
         """根据文件路径生成可访问的URL

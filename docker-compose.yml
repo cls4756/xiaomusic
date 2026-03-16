@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  xiaomusic:
+    # 使用官方镜像
+    image: hanxi/xiaomusic:latest
+    
+    # 如果要使用本地编译的镜像，改为：
+    # image: xiaomusic:latest
+    
+    container_name: xiaomusic
+    restart: unless-stopped
+    
+    # 端口映射
+    ports:
+      - "58090:8090"
+    
+    # 数据卷挂载
+    volumes:
+      # 音乐目录
+      - /xiaomusic_music:/app/music
+      # 配置目录（重要：保证重启后配置不丢失）
+      - /xiaomusic_conf:/app/conf
+      # 时区同步
+      - /etc/localtime:/etc/localtime:ro
+    
+    # 环境变量
+    environment:
+      - TZ=Asia/Shanghai
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/getversion"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    # 日志配置
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # 资源限制（可选）
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '2'
+    #       memory: 2G
+    #     reservations:
+    #       cpus: '1'
+    #       memory: 1G

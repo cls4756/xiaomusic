@@ -88,10 +88,12 @@ class CommandHandler:
         Returns:
             tuple: (命令值, 命令参数)，未匹配返回 (None, None)
         """
+        self.log.info(f"[命令匹配] 开始匹配命令 - 输入: '{query}', 来源: {'控制面板' if ctrl_panel else '语音'}")
+        
         # 优先处理完全匹配
         opvalue = self.check_full_match_cmd(device, query, ctrl_panel)
         if opvalue:
-            self.log.info(f"完全匹配指令. query:{query} opvalue:{opvalue}")
+            self.log.info(f"[命令匹配] ✓ 完全匹配成功 - 关键词: '{query}' → 命令: '{opvalue}'")
             # 自定义口令
             if opvalue.startswith("exec#"):
                 code = opvalue.split("#", 1)[1]
@@ -99,6 +101,7 @@ class CommandHandler:
             return opvalue, ""
 
         # 按优先级顺序进行模糊匹配
+        self.log.info(f"[命令匹配] 开始模糊匹配，匹配顺序: {self.config.key_match_order}")
         for opkey in self.config.key_match_order:
             patternarg = rf"(.*){opkey}(.*)"
             # 匹配参数
@@ -131,10 +134,10 @@ class CommandHandler:
                 and opvalue not in active_cmd_arr
                 and opkey not in active_cmd_arr
             ):
-                self.log.info(f"不在激活命令中 {opvalue}")
+                self.log.info(f"[命令匹配] ✗ 跳过 - 关键词: '{opkey}' 不在激活命令列表中")
                 continue
 
-            self.log.info(f"匹配到指令. opkey:{opkey} opvalue:{opvalue} oparg:{oparg}")
+            self.log.info(f"[命令匹配] ✓ 模糊匹配成功 - 关键词: '{opkey}' → 命令: '{opvalue}', 提取参数: '{oparg}'")
 
             # 自定义口令
             if opvalue.startswith("exec#"):
@@ -142,7 +145,7 @@ class CommandHandler:
                 return "exec", code
             return opvalue, oparg
 
-        self.log.info(f"未匹配到指令 {query} {ctrl_panel}")
+        self.log.info(f"[命令匹配] ✗ 未匹配到任何指令 - 输入: '{query}'")
         return None, None
 
     def check_full_match_cmd(self, device, query, ctrl_panel):

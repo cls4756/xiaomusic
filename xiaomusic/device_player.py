@@ -238,16 +238,24 @@ class XiaoMusicDevice:
                 name = self.get_cur_music()
 
         self.log.info(
-            f"play_internal. search_key:{search_key} name:{name} allow_download:{allow_download}"
+            f"[播放流程] 开始播放 - 搜索关键词: '{search_key}', 歌曲名: '{name}', 允许下载: {allow_download}"
         )
 
         if not name:
-            self.log.info(f"没有歌曲播放了 name:{name} search_key:{search_key}")
+            self.log.info(f"[播放流程] ✗ 没有歌曲可播放 - name:{name} search_key:{search_key}")
             return
 
         # 模糊搜索
+        self.log.info(f"[歌曲搜索] 在音乐库中搜索 '{name}'...")
+        all_music_count = len(self.xiaomusic.music_library.all_music)
+        self.log.info(f"[歌曲搜索] 音乐库总数: {all_music_count} 首")
+        
         names = self.xiaomusic.music_library.find_real_music_name(name, n=1)
-        self.log.info(f"play_internal. names:{names} {len(names)}")
+        
+        if names:
+            self.log.info(f"[歌曲搜索] ✓ 找到匹配歌曲: {names} (共 {len(names)} 首)")
+        else:
+            self.log.info(f"[歌曲搜索] ✗ 未找到匹配歌曲")
 
         if not names:
             # 检查本地是否存在歌曲，不存在则根据参数决定是否下载
@@ -261,9 +269,13 @@ class XiaoMusicDevice:
             return
 
         name = names[0]
+        self.log.info(f"[歌曲选择] 选择播放: '{name}'")
+        
         if name not in self._play_list:
             # 根据当前歌曲匹配歌曲列表
-            self.device.cur_playlist = self.find_cur_playlist(name)
+            matched_playlist = self.find_cur_playlist(name)
+            self.log.info(f"[播放列表] 歌曲不在当前列表，切换到: '{matched_playlist}'")
+            self.device.cur_playlist = matched_playlist
             self.update_playlist()
 
         self.log.debug(
@@ -341,14 +353,23 @@ class XiaoMusicDevice:
         self.device.cur_music = name
         self.device.playlist2music[self.device.cur_playlist] = name
         cur_playlist = self.device.cur_playlist
-        self.log.info(f"cur_music {self.get_cur_music()}")
-        url, _ = await self.xiaomusic.music_library.get_music_url(name)
+        self.log.info(f"[播放核心] 当前歌曲: '{self.get_cur_music()}', 播放列表: '{cur_playlist}'")
+        
+        self.log.info(f"[URL获取] 正在获取歌曲 '{name}' 的播放地址...")
+        url, original_url = await self.xiaomusic.music_library.get_music_url(name)
+        if original_url:
+            self.log.info(f"[URL获取] ✓ 获取成功 - 代理URL: {url}, 原始URL: {original_url}")
+        else:
+            self.log.info(f"[URL获取] ✓ 获取成功 - URL: {url}")
+        
         await self.group_force_stop_xiaoai()
-        self.log.info(f"播放 {url}")
+        self.log.info(f"[小米API] 准备调用小米播放接口 - URL: {url}")
 
         results = await self.group_player_play(url, name)
+        self.log.info(f"[小米API] 播放指令返回结果: {results}")
+        
         if all(ele is None for ele in results):
-            self.log.info(f"播放 {name} 失败. 失败次数: {self._play_failed_cnt}")
+            self.log.info(f"[播放核心] ✗ 播放 '{name}' 失败 - 失败次数: {self._play_failed_cnt}")
             await asyncio.sleep(1)
             if (
                 self.is_playing
@@ -361,7 +382,7 @@ class XiaoMusicDevice:
         # 重置播放失败次数
         self._play_failed_cnt = 0
 
-        self.log.info(f"【{name}】已经开始播放了")
+        self.log.info(f"[播放核心] ✓ 【{name}】已经开始播放")
 
         # 记录歌曲开始播放的时间
         self._start_time = time.time()
@@ -374,7 +395,7 @@ class XiaoMusicDevice:
 
         # 设置下一首歌曲的播放定时器
         if sec <= 0.1:
-            self.log.info(f"【{name}】不会设置下一首歌的定时器")
+            self.log.info(f"[定时器] 【{name}】时长过短，不设置下一首定时器")
             return
 
         # 计算自动添加歌曲的延迟时间，为当前歌曲时长的一半，但不超过60秒
@@ -384,13 +405,13 @@ class XiaoMusicDevice:
 
         # 计算获取时长的执行耗时
         duration_execution_time = time.time() - self._start_time
-        self.log.info(f"获取音乐时长耗时: {duration_execution_time:.3f} 秒")
+        self.log.info(f"[定时器] 获取音乐时长耗时: {duration_execution_time:.3f} 秒")
         # 调整定时器时长，减去获取音乐时长的执行时间
         adjusted_sec = sec + self.config.delay_sec - duration_execution_time
         # 确保调整后的时长不会过小，最小保留0.1秒
         adjusted_sec = max(adjusted_sec, 0.1)
         self.log.info(
-            f"原始歌曲时长: {sec:.3f} 秒, 调整后定时器时长: {adjusted_sec:.3f} 秒"
+            f"[定时器] 原始歌曲时长: {sec:.3f} 秒, 调整后定时器时长: {adjusted_sec:.3f} 秒"
         )
         await self.set_next_music_timeout(adjusted_sec)
         # 发布设备配置变更事件
@@ -705,28 +726,37 @@ class XiaoMusicDevice:
         try:
             audio_id = await self._get_audio_id(name)
             if self.config.continue_play:
+                self.log.info(
+                    f"[小米API调用] 使用 play_by_music_url (continue_play模式) - device_id:{device_id}, url:{url}, audio_id:{audio_id}"
+                )
                 ret = await self.auth_manager.mina_service.play_by_music_url(
                     device_id, url, _type=1, audio_id=audio_id
                 )
                 self.log.info(
-                    f"play_one_url continue_play device_id:{device_id} ret:{ret} url:{url} audio_id:{audio_id}"
+                    f"[小米API返回] continue_play模式 - device_id:{device_id}, 返回结果:{ret}"
                 )
             elif self.config.use_music_api or (
                 self.hardware in NEED_USE_PLAY_MUSIC_API
             ):
+                self.log.info(
+                    f"[小米API调用] 使用 play_by_music_url - device_id:{device_id}, url:{url}, audio_id:{audio_id}"
+                )
                 ret = await self.auth_manager.mina_service.play_by_music_url(
                     device_id, url, audio_id=audio_id
                 )
                 self.log.info(
-                    f"play_one_url play_by_music_url device_id:{device_id} ret:{ret} url:{url} audio_id:{audio_id}"
+                    f"[小米API返回] play_by_music_url - device_id:{device_id}, 返回结果:{ret}"
                 )
             else:
+                self.log.info(
+                    f"[小米API调用] 使用 play_by_url - device_id:{device_id}, url:{url}"
+                )
                 ret = await self.auth_manager.mina_service.play_by_url(device_id, url)
                 self.log.info(
-                    f"play_one_url play_by_url device_id:{device_id} ret:{ret} url:{url}"
+                    f"[小米API返回] play_by_url - device_id:{device_id}, 返回结果:{ret}"
                 )
         except Exception as e:
-            self.log.exception(f"Execption {e}")
+            self.log.exception(f"[小米API异常] device_id:{device_id}, 异常信息: {e}")
         return ret
 
     async def _get_audio_id(self, name):

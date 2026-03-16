@@ -322,8 +322,11 @@ class OnlineMusicService:
         """
         # 获取AI配置信息
         ai_info = self.js_plugin_manager.get_aiapi_info()
+        self.log.info(f"[AI智能解析] AI配置状态 - 启用: {ai_info.get('enabled', False)}, 有API Key: {bool(ai_info.get('api_key'))}")
+        
         # 如果AI启用且配置完整
         if ai_info.get("enabled", False) and ai_info.get("api_key", "") != "":
+            self.log.info(f"[AI智能解析] 准备调用AI分析用户指令: '{keyword}'")
             try:
                 from xiaomusic.utils.openai_utils import (
                     analyze_music_command as utils_analyze_music_command,
@@ -337,6 +340,8 @@ class OnlineMusicService:
                 if "model" in ai_info:
                     params["model"] = ai_info["model"]
 
+                self.log.info(f"[AI智能解析] 调用参数 - 模型: {params.get('model', 'qwen-flash')}, API: {params.get('base_url', '默认')}")
+                
                 result = await utils_analyze_music_command(**params)
 
                 if result and (result.get("name") or result.get("artist")):
@@ -345,8 +350,17 @@ class OnlineMusicService:
                     # 构建新的关键词
                     # keyword = _build_keyword(song_name, artist)
                     keyword = song_name
-                    self.log.info(f"AI提取到的信息: {result}")
+                    self.log.info(f"[AI智能解析] ✓ AI分析成功 - 原始指令: '{params['command']}' → 歌曲: '{song_name}', 歌手: '{artist}'")
                     return keyword, artist
+                else:
+                    self.log.info(f"[AI智能解析] ✗ AI未提取到有效信息，使用原始关键词: '{keyword}'")
+            except Exception as e:
+                self.log.error(f"[AI智能解析] ✗ AI调用异常: {e}")
+        else:
+            if not ai_info.get("enabled", False):
+                self.log.debug(f"[AI智能解析] AI功能未启用，跳过智能解析")
+            else:
+                self.log.warning(f"[AI智能解析] AI已启用但缺少API Key，跳过智能解析")
 
             except Exception as e:
                 self.log.error(f"AI提取报错: {e}")

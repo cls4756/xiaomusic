@@ -140,9 +140,14 @@ async def analyze_music_command(
     Returns:
         包含歌曲名和歌手名的字典，格式为 {"name": "歌曲名", "artist": "歌手名"}
     """
+    import time
+    start_time = time.time()
+    
+    log.info(f"[AI分析] 开始调用大模型 - 指令: '{command}', 模型: {model}, API: {base_url}")
+    
     try:
         headers = {
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {api_key[:10]}...{api_key[-4:]}",  # 脱敏显示
             "Content-Type": "application/json",
         }
 
@@ -156,6 +161,8 @@ async def analyze_music_command(
             "temperature": temperature,
             "max_tokens": 100,  # 限制输出长度以提高速度
         }
+        
+        log.info(f"[AI分析] 请求参数 - 模型: {model}, 温度: {temperature}, 最大tokens: 100")
 
         # 使用aiohttp进行异步请求
         async with aiohttp.ClientSession() as session:
@@ -165,27 +172,43 @@ async def analyze_music_command(
                 json=data,
                 timeout=aiohttp.ClientTimeout(total=10),  # 减少超时时间
             ) as response:
+                elapsed_time = time.time() - start_time
+                
                 if response.status == 200:
                     result = await response.json()
                     content = result["choices"][0]["message"]["content"]
+                    
+                    log.info(f"[AI分析] ✓ API调用成功 - 耗时: {elapsed_time:.2f}秒, 原始响应: {content}")
 
                     # 快速提取JSON部分
                     start = content.find("{")
                     end = content.rfind("}") + 1
                     if start != -1 and end != 0:
                         json_str = content[start:end]
-                        result = json.loads(json_str)
-                        return {
-                            "name": result.get("name", ""),
-                            "artist": result.get("artist", ""),
+                        parsed_result = json.loads(json_str)
+                        final_result = {
+                            "name": parsed_result.get("name", ""),
+                            "artist": parsed_result.get("artist", ""),
                         }
+                        log.info(f"[AI分析] ✓ 解析成功 - 歌曲: '{final_result.get('name')}', 歌手: '{final_result.get('artist')}'")
+                        return final_result
+                    else:
+                        log.warning(f"[AI分析] ✗ JSON解析失败 - 无法从响应中提取JSON: {content}")
                 else:
-                    log.debug(
-                        f"API call failed with status {response.status}: {await response.text()}"
-                    )
-    except (asyncio.TimeoutError, json.JSONDecodeError, Exception) as e:
-        log.debug(f"Music command analysis failed: {e}")
+                    error_text = await response.text()
+                    log.error(f"[AI分析] ✗ API调用失败 - 状态码: {response.status}, 耗时: {elapsed_time:.2f}秒, 错误: {error_text}")
+                    
+    except asyncio.TimeoutError:
+        elapsed_time = time.time() - start_time
+        log.error(f"[AI分析] ✗ 请求超时 - 耗时: {elapsed_time:.2f}秒")
+    except json.JSONDecodeError as e:
+        elapsed_time = time.time() - start_time
+        log.error(f"[AI分析] ✗ JSON解析错误 - 耗时: {elapsed_time:.2f}秒, 错误: {e}")
+    except Exception as e:
+        elapsed_time = time.time() - start_time
+        log.error(f"[AI分析] ✗ 未知错误 - 耗时: {elapsed_time:.2f}秒, 错误: {e}")
 
+    log.info(f"[AI分析] 返回空结果")
     return {}
 
 
