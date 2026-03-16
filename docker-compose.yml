@@ -2,12 +2,12 @@ version: '3.8'
 
 services:
   xiaomusic:
-    # 使用官方镜像
-    image: hanxi/xiaomusic:latest
+    # 使用本地 Dockerfile 构建镜像
+    build:
+      context: .
+      dockerfile: Dockerfile
     
-    # 如果要使用本地编译的镜像，改为：
-    # image: xiaomusic:latest
-    
+    image: xiaomusic:latest
     container_name: xiaomusic
     restart: unless-stopped
     
@@ -18,9 +18,9 @@ services:
     # 数据卷挂载
     volumes:
       # 音乐目录
-      - /xiaomusic_music:/app/music
+      - /home/docker_volume/docker_data/xiaomusic/music:/app/music
       # 配置目录（重要：保证重启后配置不丢失）
-      - /xiaomusic_conf:/app/conf
+      - /home/docker_volume/docker_data/xiaomusic/conf:/app/conf
       # 时区同步
       - /etc/localtime:/etc/localtime:ro
     

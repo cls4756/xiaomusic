@@ -137,17 +137,7 @@ vi /xiaomusic_conf/config.json
 
 ## 第四步：构建 Docker 镜像
 
-### 方案 A：使用官方镜像（推荐，快速）
-
-```bash
-# 直接使用官方镜像，无需编译
-docker pull hanxi/xiaomusic:latest
-
-# 验证镜像
-docker images | grep xiaomusic
-```
-
-### 方案 B：本地编译镜像（自定义）
+### 本地编译镜像（包含你的所有代码修改）
 
 ```bash
 # 进入项目目录
@@ -159,27 +149,44 @@ docker build -t xiaomusic:latest .
 # 验证镜像
 docker images | grep xiaomusic
 
-# 查看构建日志
+# 查看构建日志（如果需要）
 docker build -t xiaomusic:latest . --progress=plain
 ```
 
-**构建时间**：约 5-10 分钟（取决于网络速度）
+**重要说明**：
+- 使用本地 Dockerfile 构建，包含你对代码的所有修改
+- 首次构建时间：约 5-10 分钟（取决于网络速度）
+- 后续更新代码后，只需重新执行 `docker build` 命令即可
 
 ---
 
 ## 第五步：创建 Docker Compose 配置
 
-### 创建 `/opt/xiaomusic/docker-compose.yml`
+### 使用本地编译的镜像
+
+docker-compose.yml 已经配置为使用本地 Dockerfile 构建镜像。你只需要在 CentOS 上运行：
+
+```bash
+# 进入项目目录
+cd /opt/xiaomusic
+
+# docker-compose 会自动使用 Dockerfile 构建镜像
+docker-compose up -d
+```
+
+**docker-compose.yml 配置说明**：
 
 ```yaml
 version: '3.8'
 
 services:
   xiaomusic:
-    image: hanxi/xiaomusic:latest
-    # 如果使用本地编译的镜像，改为：
-    # image: xiaomusic:latest
+    # 使用本地 Dockerfile 构建镜像
+    build:
+      context: .
+      dockerfile: Dockerfile
     
+    image: xiaomusic:latest
     container_name: xiaomusic
     restart: unless-stopped
     
@@ -208,36 +215,38 @@ services:
         max-file: "3"
 ```
 
+**关键点**：
+- `build` 部分指定使用本地 Dockerfile 构建
+- 首次运行 `docker-compose up -d` 时会自动构建镜像
+- 后续更新代码后，运行 `docker-compose up -d --build` 重新构建
+
 ---
 
 ## 第六步：启动容器
 
-### 使用 Docker Compose 启动
+### 使用 Docker Compose 启动（推荐）
 
 ```bash
 # 进入项目目录
 cd /opt/xiaomusic
 
-# 启动容器（后台运行）
+# 启动容器（首次会自动构建镜像）
 docker-compose up -d
 
-# 查看启动日志
+# 查看构建和启动日志
 docker-compose logs -f xiaomusic
 
 # 等待容器完全启动（约 30-60 秒）
 ```
 
-### 或使用 Docker 命令启动
+### 更新代码后重新构建
 
 ```bash
-docker run -d \
-  --name xiaomusic \
-  --restart unless-stopped \
-  -p 58090:8090 \
-  -v /xiaomusic_music:/app/music \
-  -v /xiaomusic_conf:/app/conf \
-  -e TZ=Asia/Shanghai \
-  hanxi/xiaomusic:latest
+# 如果修改了代码，重新构建镜像并启动
+docker-compose up -d --build
+
+# 查看构建日志
+docker-compose logs -f xiaomusic
 ```
 
 ---
@@ -551,20 +560,34 @@ docker restart xiaomusic
 
 ## 更新升级
 
-### 更新到最新版本
+### 更新代码后重新构建
 
 ```bash
-# 拉取最新镜像
-docker pull hanxi/xiaomusic:latest
+# 1. 更新本地代码（git pull 或手动修改）
+cd /opt/xiaomusic
+git pull origin main
 
+# 2. 重新构建镜像
+docker-compose up -d --build
+
+# 3. 验证更新
+docker logs xiaomusic | grep -i "version"
+```
+
+### 完整的更新流程
+
+```bash
 # 停止旧容器
 docker-compose down
 
-# 启动新容器
-docker-compose up -d
+# 更新代码
+git pull origin main
 
-# 验证更新
-docker logs xiaomusic | grep -i "version"
+# 重新构建并启动
+docker-compose up -d --build
+
+# 查看日志
+docker-compose logs -f xiaomusic
 ```
 
 ---
