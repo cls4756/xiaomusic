@@ -1,14 +1,14 @@
 # 定义构建参数，用于指定架构和基础镜像
 ARG PYTHON_VERSION=3.14
 
-# 根据不同架构选择对应的基础镜像
-FROM python:${PYTHON_VERSION}-alpine AS base-linux-amd64
-FROM python:${PYTHON_VERSION}-alpine AS base-linux-arm64
-FROM python:${PYTHON_VERSION}-bookworm AS base-linux-arm-v7
+# 根据不同架构选择对应的基础镜像 - 使用 Debian slim 加快构建速度
+FROM python:${PYTHON_VERSION}-slim AS base-linux-amd64
+FROM python:${PYTHON_VERSION}-slim AS base-linux-arm64
+FROM python:${PYTHON_VERSION}-slim AS base-linux-arm-v7
 
-FROM python:${PYTHON_VERSION}-alpine AS run-linux-amd64
-FROM python:${PYTHON_VERSION}-alpine AS run-linux-arm64
-FROM python:${PYTHON_VERSION}-bookworm AS run-linux-arm-v7
+FROM python:${PYTHON_VERSION}-slim AS run-linux-amd64
+FROM python:${PYTHON_VERSION}-slim AS run-linux-arm64
+FROM python:${PYTHON_VERSION}-slim AS run-linux-arm-v7
 
 FROM --platform=$BUILDPLATFORM alpine AS shelf
 # 这里的逻辑是关键：接收标准的 TARGETPLATFORM (如 linux/amd64)
@@ -20,35 +20,19 @@ RUN echo ${TARGETPLATFORM//\//-} > /platform_id
 ARG TARGETPLATFORM
 FROM base-${TARGETPLATFORM//\//-} AS builder
 
-# 安装构建依赖（根据基础镜像类型区分）
-RUN if [ -f /etc/alpine-release ]; then \
-        # Alpine系统依赖
-        apk add --no-cache \
-        build-base \
-        nodejs \
-        npm \
-        zlib-dev \
-        jpeg-dev \
-        freetype-dev \
-        lcms2-dev \
-        openjpeg-dev \
-        tiff-dev \
-        libwebp-dev; \
-    else \
-        # Debian系统依赖
-        apt-get update && apt-get install -y --no-install-recommends \
-        build-essential \
-        nodejs \
-        npm \
-        zlib1g-dev \
-        libjpeg-dev \
-        libfreetype6-dev \
-        liblcms2-dev \
-        libopenjp2-7-dev \
-        libtiff5-dev \
-        libwebp-dev \
-        && rm -rf /var/lib/apt/lists/*; \
-    fi
+# 安装构建依赖（Debian slim 系统）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    nodejs \
+    npm \
+    zlib1g-dev \
+    libjpeg-dev \
+    libfreetype6-dev \
+    liblcms2-dev \
+    libopenjp2-7-dev \
+    libtiff5-dev \
+    libwebp-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # 安装PDM
 RUN pip install -U pdm
@@ -72,21 +56,12 @@ COPY xiaomusic.py .
 ARG TARGETPLATFORM
 FROM run-${TARGETPLATFORM//\//-} AS runner
 
-# 安装运行时依赖（区分Alpine和Debian）
-RUN if [ -f /etc/alpine-release ]; then \
-        # Alpine运行时依赖
-        apk add --no-cache \
-        ffmpeg \
-        nodejs \
-        npm; \
-    else \
-        # Debian运行时依赖
-        apt-get update && apt-get install -y --no-install-recommends \
-        ffmpeg \
-        nodejs \
-        npm \
-        && rm -rf /var/lib/apt/lists/*; \
-    fi
+# 安装运行时依赖（Debian slim 系统）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    nodejs \
+    npm \
+    && rm -rf /var/lib/apt/lists/*
 
 # 设置工作目录
 WORKDIR /app
