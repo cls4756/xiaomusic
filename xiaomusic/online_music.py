@@ -362,9 +362,6 @@ class OnlineMusicService:
             else:
                 self.log.warning(f"[AI智能解析] AI已启用但缺少API Key，跳过智能解析")
 
-            except Exception as e:
-                self.log.error(f"AI提取报错: {e}")
-
         # 如果AI不可用或处理失败，使用传统分割方式
         return _parse_keyword_by_dash(keyword)
 
