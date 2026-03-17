@@ -812,12 +812,14 @@ class XiaoMusicDevice:
 
     async def set_next_music_timeout(self, sec):
         """设置下一首歌曲的播放定时器"""
+        self.log.info(f"[定时器] 开始设置下一首定时器 - 延迟: {sec:.3f}秒, did: {self.did}")
         await self.cancel_next_timer()
+        self.log.info(f"[定时器] 已取消旧定时器，准备创建新定时器 - did: {self.did}")
 
         async def _do_next():
             await asyncio.sleep(sec)
             try:
-                self.log.info(f"定时器时间到了 did: {self.did}")
+                self.log.info(f"[定时器] 定时器时间到了 did: {self.did}")
                 current_timer = self._next_timer
                 if current_timer:
                     # 取消任务（防止任务被重复触发，即使sleep已结束）
@@ -829,19 +831,20 @@ class XiaoMusicDevice:
                     # 再置空引用
                     self._next_timer = None
                     if self.device.play_type == PLAY_TYPE_SIN:
-                        self.log.info(f"单曲播放不继续播放下一首 did: {self.did}")
+                        self.log.info(f"[定时器] 单曲播放不继续播放下一首 did: {self.did}")
                         await self.stop(arg1="notts")
                     else:
+                        self.log.info(f"[定时器] 定时器触发，播放下一首 did: {self.did}")
                         await self._play_next()
                 else:
-                    self.log.info(f"定时器时间到了但是不见了 did: {self.did}")
+                    self.log.info(f"[定时器] 定时器时间到了但是不见了 did: {self.did}")
                     await self.stop(arg1="notts")
 
             except Exception as e:
-                self.log.error(f"Execption {e}")
+                self.log.error(f"[定时器] 异常: {e}")
 
         self._next_timer = asyncio.create_task(_do_next())
-        self.log.info(f"{sec} 秒后将会播放下一首歌曲 did: {self.did}")
+        self.log.info(f"[定时器] ✓ 已创建定时器 - {sec:.3f}秒后将会播放下一首歌曲 did: {self.did}")
 
     async def set_volume(self, volume: int):
         """设置音量"""
@@ -946,17 +949,18 @@ class XiaoMusicDevice:
 
     async def cancel_next_timer(self):
         """取消下一首定时器"""
-        self.log.info(f"cancel_next_timer did: {self.did}")
+        self.log.info(f"[定时器] cancel_next_timer 被调用 did: {self.did}")
         if self._next_timer:
+            self.log.info(f"[定时器] 存在定时器，准备取消 did: {self.did}")
             self._next_timer.cancel()
             try:
                 await self._next_timer
             except asyncio.CancelledError:
                 pass
-            self.log.info(f"下一曲定时器已取消 did: {self.did}")
+            self.log.info(f"[定时器] 下一曲定时器已取消 did: {self.did}")
             self._next_timer = None
         else:
-            self.log.info(f"下一曲定时器不见了 did: {self.did}")
+            self.log.info(f"[定时器] 下一曲定时器不存在 did: {self.did}")
 
     async def cancel_group_next_timer(self):
         """取消组内所有设备的下一首定时器"""
