@@ -323,3 +323,120 @@ async def stream_openai_chat(
     except Exception as e:
         log.error(f"Error in stream_openai_chat: {e}")
         return None
+
+
+# 音乐推荐提示词
+MUSIC_RECOMMENDATION_PROMPT = """你是音乐推荐专家。根据已播放的歌曲，推荐相似风格的新歌曲。
+
+任务：
+1. 分析已播放歌曲的特点（风格、歌手、类型等）
+2. 推荐5-10首相似的歌曲
+3. 返回JSON格式的推荐列表
+
+返回格式：
+{"recommendations": [
+  {"title": "歌曲名", "artist": "歌手名", "reason": "推荐原因"},
+  ...
+]}
+
+重要：
+- 只输出JSON，不要输出其他文字
+- 推荐的歌曲应该与已播放歌曲风格相似
+- 避免推荐已播放过的歌曲
+"""
+
+
+async def recommend_music(
+    played_songs: list[str],
+    base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    api_key: str = "",
+    model: str = "qwen-flash",
+) -> dict:
+    """
+    根据已播放的歌曲推荐新歌曲
+
+    Args:
+        played_songs: 已播放的歌曲列表，格式为 ["歌曲名-歌手名", ...]
+        base_url: API的基础URL
+        api_key: API密钥
+        model: 使用的模型名称
+
+    Returns:
+        包含推荐歌曲的字典，格式为 {"recommendations": [{"title": "...", "artist": "...", "reason": "..."}, ...]}
+    """
+    if not played_songs or not api_key:
+        return {"recommendations": []}
+
+    try:
+        log.info(f"[音乐推荐] 开始推荐 - 已播放歌曲数: {len(played_songs)}")
+        
+        # 构建请求头
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        
+        # 脱敏显示 API Key 用于日志
+        masked_key = f"{api_key[:10]}...{api_key[-4:]}" if len(api_key) > 14 else "***"
+        log.info(f"[音乐推荐] 使用 API Key: {masked_key}")
+
+        # 准备请求数据
+        songs_str = "\n".join(played_songs[-5:])  # 只用最近5首歌作为参考
+        data = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": MUSIC_RECOMMENDATION_PROMPT},
+                {"role": "user", "content": f"已播放的歌曲：\n{songs_str}\n\n请推荐相似风格的新歌曲。"},
+            ],
+            "temperature": 0.7,
+            "max_tokens": 200,
+        }
+        
+        log.info(f"[音乐推荐] 请求参数 - 模型: {model}, 参考歌曲: {len(played_songs[-5:])} 首")
+
+        # 使用aiohttp进行异步请求
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{base_url}/chat/completions",
+                headers=headers,
+                json=data,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    choice = result["choices"][0]
+                    message = choice["message"]
+                    
+                    # 尝试从多个字段获取内容
+                    content = message.get("content") or message.get("reasoning") or ""
+                    
+                    if not content:
+                        log.warning(f"[音乐推荐] ✗ 响应为空")
+                        return {"recommendations": []}
+                    
+                    log.info(f"[音乐推荐] ✓ API调用成功")
+
+                    # 快速提取JSON部分
+                    start = content.find("{")
+                    end = content.rfind("}") + 1
+                    if start != -1 and end != 0:
+                        json_str = content[start:end]
+                        try:
+                            parsed_result = json.loads(json_str)
+                            recommendations = parsed_result.get("recommendations", [])
+                            log.info(f"[音乐推荐] ✓ 推荐成功 - 推荐歌曲数: {len(recommendations)}")
+                            return parsed_result
+                        except json.JSONDecodeError as e:
+                            log.warning(f"[音乐推荐] ✗ JSON解析失败 - 错误: {e}")
+                    else:
+                        log.warning(f"[音乐推荐] ✗ 无法从响应中提取JSON")
+                else:
+                    error_text = await response.text()
+                    log.error(f"[音乐推荐] ✗ API调用失败 - 状态码: {response.status}, 错误: {error_text}")
+                    
+    except asyncio.TimeoutError:
+        log.error(f"[音乐推荐] ✗ 请求超时")
+    except Exception as e:
+        log.error(f"[音乐推荐] ✗ 未知错误: {e}")
+
+    return {"recommendations": []}

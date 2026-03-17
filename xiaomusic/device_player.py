@@ -158,58 +158,123 @@ class XiaoMusicDevice:
         try:
             await asyncio.sleep(sleep_sec)
             self.log.info(f"[自动追加] 开始搜索新歌曲 - 关键词: '{keyword}'")
-            # 调用在线音乐服务搜索新歌曲
-            result = await self.xiaomusic.online_music_service.get_music_list_online(
-                keyword=keyword, limit=10
-            )
-            if result.get("success") and result.get("total") > 0:
-                song_list = result.get("data", [])
-                self.log.info(f"[自动追加] 搜索到 {len(song_list)} 首歌曲，准备去重")
+            
+            # 检查是否启用AI推荐
+            ai_info = self.xiaomusic.online_music_service.js_plugin_manager.get_aiapi_info()
+            use_ai_recommendation = ai_info.get("enabled", False) and ai_info.get("api_key", "")
+            
+            if use_ai_recommendation:
+                # 使用AI推荐
+                self.log.info(f"[自动追加] 使用AI推荐新歌曲")
+                from xiaomusic.utils.openai_utils import recommend_music
                 
-                # 获取当前播放列表中已有的歌曲（用于去重）
-                current_songs = set()
-                for song_name in self._play_list:
-                    current_songs.add(song_name.lower())
+                # 获取已播放的歌曲列表（最近10首）
+                played_songs = self._play_list[-10:] if len(self._play_list) > 0 else []
+                self.log.info(f"[自动追加] 参考已播放歌曲: {len(played_songs)} 首")
                 
-                self.log.info(f"[自动追加] 当前播放列表中已有 {len(current_songs)} 首歌曲")
+                # 调用AI推荐
+                params = {"played_songs": played_songs, "api_key": ai_info.get("api_key")}
+                if "base_url" in ai_info:
+                    params["base_url"] = ai_info["base_url"]
+                if "model" in ai_info:
+                    params["model"] = ai_info["model"]
                 
-                # 过滤掉已经在播放列表中的歌曲
-                new_songs = []
-                for song in song_list:
-                    song_title = song.get("title", "").lower()
-                    song_artist = song.get("artist", "").lower()
-                    song_key = f"{song_title}-{song_artist}"
+                recommendation_result = await recommend_music(**params)
+                recommendations = recommendation_result.get("recommendations", [])
+                
+                if recommendations:
+                    self.log.info(f"[自动追加] ✓ AI推荐了 {len(recommendations)} 首歌曲")
+                    # 依次搜索推荐的歌曲
+                    added_count = 0
+                    for rec in recommendations:
+                        song_title = rec.get("title", "")
+                        song_artist = rec.get("artist", "")
+                        reason = rec.get("reason", "")
+                        
+                        if not song_title:
+                            continue
+                        
+                        # 检查是否已在播放列表中
+                        song_key = f"{song_title}-{song_artist}".lower()
+                        is_duplicate = False
+                        for existing_song in self._play_list:
+                            if song_key in existing_song.lower() or existing_song.lower() in song_key:
+                                is_duplicate = True
+                                break
+                        
+                        if is_duplicate:
+                            self.log.debug(f"[自动追加] ✗ 推荐歌曲重复: '{song_title}' - '{song_artist}'")
+                            continue
+                        
+                        # 搜索这首歌
+                        self.log.info(f"[自动追加] 搜索推荐歌曲: '{song_title}' - '{song_artist}' (原因: {reason})")
+                        search_keyword = f"{song_title} {song_artist}".strip()
+                        result = await self.xiaomusic.online_music_service.get_music_list_online(
+                            keyword=search_keyword, limit=1
+                        )
+                        
+                        if result.get("success") and result.get("total") > 0:
+                            song_list = result.get("data", [])
+                            converted_music_list = self.xiaomusic.online_music_service._convert_song_list_to_music_items(song_list)
+                            if converted_music_list:
+                                music_library = self.xiaomusic.music_library
+                                music_library.update_music_list_json(list_name, converted_music_list, append=True)
+                                added_count += 1
+                                self.log.info(f"[自动追加] ✓ 成功添加推荐歌曲: '{song_title}'")
+                        else:
+                            self.log.warning(f"[自动追加] ✗ 未找到推荐歌曲: '{song_title}'")
                     
-                    # 检查是否已在播放列表中
-                    is_duplicate = False
-                    for existing_song in self._play_list:
-                        existing_key = existing_song.lower()
-                        if song_key in existing_key or existing_song.lower() in song_key:
-                            is_duplicate = True
-                            break
-                    
-                    if not is_duplicate:
-                        new_songs.append(song)
-                        self.log.debug(f"[自动追加] ✓ 新歌曲: '{song_title}' - '{song_artist}'")
-                    else:
-                        self.log.debug(f"[自动追加] ✗ 重复歌曲: '{song_title}' - '{song_artist}'，已跳过")
-                
-                if new_songs:
-                    self.log.info(f"[自动追加] ✓ 过滤后得到 {len(new_songs)} 首新歌曲，准备追加到播放列表")
-                    # 转换歌曲格式并追加到播放列表
-                    converted_music_list = self.xiaomusic.online_music_service._convert_song_list_to_music_items(new_songs)
-                    if converted_music_list:
+                    if added_count > 0:
                         music_library = self.xiaomusic.music_library
-                        # 追加到现有歌单（append=True）
-                        music_library.update_music_list_json(list_name, converted_music_list, append=True)
                         music_library.gen_all_music_list()
-                        self.log.info(f"[自动追加] ✓ 成功追加 {len(converted_music_list)} 首新歌曲到播放列表")
-                        # 更新播放列表
                         self.update_playlist()
+                        self.log.info(f"[自动追加] ✓ 成功追加 {added_count} 首推荐歌曲到播放列表")
+                    else:
+                        self.log.warning(f"[自动追加] ⚠ 推荐的歌曲都已存在或未找到")
                 else:
-                    self.log.warning(f"[自动追加] ⚠ 搜索结果全部重复，没有新歌曲可追加")
+                    self.log.warning(f"[自动追加] ✗ AI推荐失败或无推荐结果")
             else:
-                self.log.warning(f"[自动追加] ✗ 搜索失败或无结果")
+                # 使用原有的关键词搜索方式
+                self.log.info(f"[自动追加] 使用关键词搜索新歌曲")
+                result = await self.xiaomusic.online_music_service.get_music_list_online(
+                    keyword=keyword, limit=10
+                )
+                if result.get("success") and result.get("total") > 0:
+                    song_list = result.get("data", [])
+                    self.log.info(f"[自动追加] 搜索到 {len(song_list)} 首歌曲，准备去重")
+                    
+                    # 过滤掉已经在播放列表中的歌曲
+                    new_songs = []
+                    for song in song_list:
+                        song_title = song.get("title", "").lower()
+                        song_artist = song.get("artist", "").lower()
+                        song_key = f"{song_title}-{song_artist}"
+                        
+                        # 检查是否已在播放列表中
+                        is_duplicate = False
+                        for existing_song in self._play_list:
+                            existing_key = existing_song.lower()
+                            if song_key in existing_key or existing_song.lower() in song_key:
+                                is_duplicate = True
+                                break
+                        
+                        if not is_duplicate:
+                            new_songs.append(song)
+                    
+                    if new_songs:
+                        self.log.info(f"[自动追加] ✓ 过滤后得到 {len(new_songs)} 首新歌曲，准备追加到播放列表")
+                        converted_music_list = self.xiaomusic.online_music_service._convert_song_list_to_music_items(new_songs)
+                        if converted_music_list:
+                            music_library = self.xiaomusic.music_library
+                            music_library.update_music_list_json(list_name, converted_music_list, append=True)
+                            music_library.gen_all_music_list()
+                            self.log.info(f"[自动追加] ✓ 成功追加 {len(converted_music_list)} 首新歌曲到播放列表")
+                            self.update_playlist()
+                    else:
+                        self.log.warning(f"[自动追加] ⚠ 搜索结果全部重复，没有新歌曲可追加")
+                else:
+                    self.log.warning(f"[自动追加] ✗ 搜索失败或无结果")
+                    
         except asyncio.CancelledError:
             return
         except Exception as e:
