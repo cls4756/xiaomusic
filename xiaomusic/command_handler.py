@@ -86,9 +86,15 @@ class CommandHandler:
                     except Exception as e:
                         self.log.warning(f"[命令处理] AI 判断失败: {e}")
                 else:
-                    self.log.info(f"[命令处理] AI 未启用，跳过意图判断")
+                    self.log.info(f"[命令处理] AI 未启用，尝试直接调用在线搜索")
+                    # AI 未启用时，直接尝试在线搜索
+                    try:
+                        await self.xiaomusic.online_play(did=did, arg1=query)
+                        return
+                    except Exception as e:
+                        self.log.warning(f"[命令处理] 在线搜索失败: {e}")
                 
-                # AI 判断失败或未启用，等待后检查是否需要重播
+                # AI 判断失败或在线搜索失败，等待后检查是否需要重播
                 await asyncio.sleep(1)
                 await device.check_replay()
                 return

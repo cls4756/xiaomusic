@@ -11,32 +11,21 @@ import aiohttp
 log = logging.getLogger(__package__)
 
 # 改进的音乐分析提示，能识别歌曲、歌手、专辑等
-MUSIC_ANALYSIS_PROMPT = """
-你是一个音乐播放口令分析师，专门负责从用户指令中提取音乐信息并识别类型。
+MUSIC_ANALYSIS_PROMPT = """你是音乐分析师。分析用户指令并返回JSON。
 
-任务要求：
-1. 识别用户指令中的音乐信息类型和具体内容
-2. 按照JSON格式返回结果，包含以下字段：
-   - type: 识别的类型，可选值为 "song"(歌曲), "artist"(歌手), "album"(专辑), "series"(系列/合集), "unknown"(未知)
-   - name: 识别到的歌曲名（仅当type为song时有效）
-   - artist: 识别到的歌手名（当type为song时为原唱歌手，当type为artist时为空）
-   - keyword: 识别到的关键词（当type为artist/album/series时使用）
+规则：
+- type: "song"(歌曲), "artist"(歌手), "album"(专辑), "series"(系列), "unknown"(未知)
+- name: 歌曲名（仅type=song时）
+- artist: 歌手名（type=song时为原唱，type=artist时为空）
+- keyword: 关键词（type=artist/album/series时使用）
 
-3. 返回格式示例：
-   - 用户说"播放说好不哭" → {"type": "song", "name": "说好不哭", "artist": "周杰伦"}
-   - 用户说"播放周杰伦的歌" → {"type": "artist", "name": "", "artist": "周杰伦", "keyword": "周杰伦"}
-   - 用户说"播放说好不哭" (无法确定歌手) → {"type": "song", "name": "说好不哭", "artist": ""}
-   - 用户说"播放周杰伦" → {"type": "artist", "name": "", "artist": "", "keyword": "周杰伦"}
-   - 用户说"播放说好不哭专辑" → {"type": "album", "name": "", "artist": "", "keyword": "说好不哭"}
-   - 如果都没有识别到 → {"type": "unknown", "name": "", "artist": "", "keyword": ""}
+示例：
+- "播放说好不哭" → {"type":"song","name":"说好不哭","artist":"周杰伦"}
+- "播放周杰伦的歌" → {"type":"artist","name":"","artist":"周杰伦","keyword":"周杰伦"}
+- "播放儿歌" → {"type":"series","name":"","artist":"","keyword":"儿歌"}
+- "播放儿歌多多" → {"type":"series","name":"","artist":"","keyword":"儿歌多多"}
 
-4. 重要规则：
-   - 最后必须输出一个完整的JSON对象，格式如上所示
-   - 不要添加任何额外解释或文字在JSON之后
-   - 特别要注意一些歌曲名称中包含'的'字的歌，不要识别错误了
-   - 如果用户只说了歌曲名，尽量根据常识推断原唱歌手（如"说好不哭"应该是周杰伦）
-   - 如果无法确定歌手，artist字段留空
-"""
+重要：只输出JSON，不要输出其他文字。"""
 
 
 def create_openai_client(base_url: str, api_key: str) -> dict:
@@ -207,10 +196,12 @@ async def analyze_music_command(
                     log.info(f"[AI分析] ✓ API调用成功 - 耗时: {elapsed_time:.2f}秒, 原始响应长度: {len(content)}")
 
                     # 快速提取JSON部分
+                    log.debug(f"[AI分析] 原始响应内容: {content}")
                     start = content.find("{")
                     end = content.rfind("}") + 1
                     if start != -1 and end != 0:
                         json_str = content[start:end]
+                        log.debug(f"[AI分析] 提取的JSON字符串: {json_str}")
                         try:
                             parsed_result = json.loads(json_str)
                             final_result = {
@@ -224,7 +215,7 @@ async def analyze_music_command(
                         except json.JSONDecodeError as e:
                             log.warning(f"[AI分析] ✗ JSON解析失败 - 错误: {e}, 内容: {json_str}")
                     else:
-                        log.warning(f"[AI分析] ✗ 无法从响应中提取JSON")
+                        log.warning(f"[AI分析] ✗ 无法从响应中提取JSON - 原始响应: {content}")
                 else:
                     error_text = await response.text()
                     log.error(f"[AI分析] ✗ API调用失败 - 状态码: {response.status}, 耗时: {elapsed_time:.2f}秒, 错误: {error_text}")
