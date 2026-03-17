@@ -84,6 +84,8 @@ class XiaoMusicDevice:
         
         # 在线播放的搜索关键词（用于自动追加新播放列表）
         self._online_search_keyword = None
+        # 在线播放的搜索类型（song/artist/album/series/unknown）
+        self._online_search_type = None
 
     @property
     def did(self):
@@ -126,14 +128,19 @@ class XiaoMusicDevice:
             is_last_song = index == play_list_len - 1
         # 四个条件都满足，才自动添加下一首
         if auto_add_song and is_online and play_all and is_last_song:
-            # 如果有在线搜索关键词，使用在线搜索追加新歌曲
-            if self._online_search_keyword:
-                self.log.info(f"[自动追加] 检测到在线播放列表即将播完，准备追加新歌曲 - 关键词: '{self._online_search_keyword}'")
-                await self._add_online_songs(cur_list_name, self._online_search_keyword, sleep_sec)
+            # 检查搜索类型，只有系列/歌手/专辑类型才自动追加
+            search_type = getattr(self, '_online_search_type', None)
+            if search_type in ["series", "artist", "album"]:
+                # 如果有在线搜索关键词，使用在线搜索追加新歌曲
+                if self._online_search_keyword:
+                    self.log.info(f"[自动追加] 检测到在线播放列表即将播完，准备追加新歌曲 - 关键词: '{self._online_search_keyword}', 类型: '{search_type}'")
+                    await self._add_online_songs(cur_list_name, self._online_search_keyword, sleep_sec)
+                else:
+                    # 否则使用原有的歌手搜索逻辑
+                    singer_name = cur_music.split("-")[1]
+                    await self._add_singer_song(cur_list_name, cur_music, sleep_sec)
             else:
-                # 否则使用原有的歌手搜索逻辑
-                singer_name = cur_music.split("-")[1]
-                await self._add_singer_song(cur_list_name, cur_music, sleep_sec)
+                self.log.info(f"[自动追加] 搜索类型为 '{search_type}'，不自动追加新歌曲（仅支持 series/artist/album 类型）")
 
     # 启用延时器，搜索当前歌曲歌手的其他不在歌单内的歌曲
     async def _add_singer_song(self, list_name, cur_music, sleep_sec):

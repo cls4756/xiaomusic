@@ -519,11 +519,32 @@ class OnlineMusicService:
                     ordered_results = all_search_results
                 
                 list_name = "_online_play"
-                # 记录搜索关键词，用于后续自动追加新歌曲
+                # 记录搜索关键词和类型，用于后续自动追加新歌曲
                 device = self.xiaomusic.device_manager.devices.get(did)
                 if device:
+                    # 获取AI识别的类型
+                    ai_result = await self._parse_keyword_with_ai(name)
+                    # ai_result 返回的是 (keyword, artist)，需要重新调用AI获取类型
+                    ai_info = self.js_plugin_manager.get_aiapi_info()
+                    if ai_info.get("enabled", False) and ai_info.get("api_key", ""):
+                        try:
+                            from xiaomusic.utils.openai_utils import analyze_music_command
+                            params = {"command": name, "api_key": ai_info.get("api_key")}
+                            if "base_url" in ai_info:
+                                params["base_url"] = ai_info["base_url"]
+                            if "model" in ai_info:
+                                params["model"] = ai_info["model"]
+                            ai_type_result = await analyze_music_command(**params)
+                            search_type = ai_type_result.get("type", "unknown")
+                        except Exception as e:
+                            self.log.warning(f"[在线播放] 获取搜索类型失败: {e}")
+                            search_type = "unknown"
+                    else:
+                        search_type = "unknown"
+                    
                     device._online_search_keyword = name
-                    self.log.info(f"[在线播放] 记录搜索关键词: '{name}'，用于自动追加新歌曲")
+                    device._online_search_type = search_type
+                    self.log.info(f"[在线播放] 记录搜索信息 - 关键词: '{name}', 类型: '{search_type}'")
                 
                 # 调用公共函数,处理歌曲信息 -> 添加歌单 -> 播放歌单
                 # 传入所有搜索结果，这样播放完最匹配的歌曲后会自动播放其他结果
