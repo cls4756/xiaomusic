@@ -519,6 +519,12 @@ class OnlineMusicService:
                     ordered_results = all_search_results
                 
                 list_name = "_online_play"
+                # 记录搜索关键词，用于后续自动追加新歌曲
+                device = self.xiaomusic.device_manager.devices.get(did)
+                if device:
+                    device._online_search_keyword = name
+                    self.log.info(f"[在线播放] 记录搜索关键词: '{name}'，用于自动追加新歌曲")
+                
                 # 调用公共函数,处理歌曲信息 -> 添加歌单 -> 播放歌单
                 # 传入所有搜索结果，这样播放完最匹配的歌曲后会自动播放其他结果
                 return await self.push_music_list_play(

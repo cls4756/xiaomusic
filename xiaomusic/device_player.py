@@ -81,6 +81,9 @@ class XiaoMusicDevice:
         self._add_song_timer = None
         # TTS 播放定时器
         self._tts_timer = None
+        
+        # 在线播放的搜索关键词（用于自动追加新播放列表）
+        self._online_search_keyword = None
 
     @property
     def did(self):
@@ -123,7 +126,14 @@ class XiaoMusicDevice:
             is_last_song = index == play_list_len - 1
         # 四个条件都满足，才自动添加下一首
         if auto_add_song and is_online and play_all and is_last_song:
-            await self._add_singer_song(cur_list_name, cur_music, sleep_sec)
+            # 如果有在线搜索关键词，使用在线搜索追加新歌曲
+            if self._online_search_keyword:
+                self.log.info(f"[自动追加] 检测到在线播放列表即将播完，准备追加新歌曲 - 关键词: '{self._online_search_keyword}'")
+                await self._add_online_songs(cur_list_name, self._online_search_keyword, sleep_sec)
+            else:
+                # 否则使用原有的歌手搜索逻辑
+                singer_name = cur_music.split("-")[1]
+                await self._add_singer_song(cur_list_name, cur_music, sleep_sec)
 
     # 启用延时器，搜索当前歌曲歌手的其他不在歌单内的歌曲
     async def _add_singer_song(self, list_name, cur_music, sleep_sec):
@@ -135,6 +145,46 @@ class XiaoMusicDevice:
         self._add_song_timer = asyncio.create_task(
             self._delayed_add_singer_song(list_name, singer_name, sleep_sec)
         )
+
+    async def _add_online_songs(self, list_name, keyword, sleep_sec):
+        """延迟搜索并追加在线歌曲"""
+        # 创建新的定时器，在播放完最后一首歌前搜索新歌曲
+        self._add_song_timer = asyncio.create_task(
+            self._delayed_add_online_songs(list_name, keyword, sleep_sec)
+        )
+
+    async def _delayed_add_online_songs(self, list_name, keyword, sleep_sec):
+        """延迟执行添加在线歌曲的操作"""
+        try:
+            await asyncio.sleep(sleep_sec)
+            self.log.info(f"[自动追加] 开始搜索新歌曲 - 关键词: '{keyword}'")
+            # 调用在线音乐服务搜索新歌曲
+            result = await self.xiaomusic.online_music_service.get_music_list_online(
+                keyword=keyword, limit=10
+            )
+            if result.get("success") and result.get("total") > 0:
+                song_list = result.get("data", [])
+                self.log.info(f"[自动追加] ✓ 搜索到 {len(song_list)} 首歌曲，准备追加到播放列表")
+                # 转换歌曲格式并追加到播放列表
+                converted_music_list = self.xiaomusic.online_music_service._convert_song_list_to_music_items(song_list)
+                if converted_music_list:
+                    music_library = self.xiaomusic.music_library
+                    # 追加到现有歌单（append=True）
+                    music_library.update_music_list_json(list_name, converted_music_list, append=True)
+                    music_library.gen_all_music_list()
+                    self.log.info(f"[自动追加] ✓ 成功追加 {len(converted_music_list)} 首歌曲到播放列表")
+                    # 更新播放列表
+                    self.update_playlist()
+            else:
+                self.log.warning(f"[自动追加] ✗ 搜索失败或无结果")
+        except asyncio.CancelledError:
+            return
+        except Exception as e:
+            self.log.error(f"[自动追加] ✗ 异常: {e}")
+        finally:
+            # 执行完毕后清除定时器引用
+            if self._add_song_timer:
+                self._add_song_timer = None
 
     async def _delayed_add_singer_song(self, list_name, singer_name, sleep_sec):
         """延迟执行添加歌手歌曲的操作"""
