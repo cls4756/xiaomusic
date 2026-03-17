@@ -164,17 +164,50 @@ class XiaoMusicDevice:
             )
             if result.get("success") and result.get("total") > 0:
                 song_list = result.get("data", [])
-                self.log.info(f"[自动追加] ✓ 搜索到 {len(song_list)} 首歌曲，准备追加到播放列表")
-                # 转换歌曲格式并追加到播放列表
-                converted_music_list = self.xiaomusic.online_music_service._convert_song_list_to_music_items(song_list)
-                if converted_music_list:
-                    music_library = self.xiaomusic.music_library
-                    # 追加到现有歌单（append=True）
-                    music_library.update_music_list_json(list_name, converted_music_list, append=True)
-                    music_library.gen_all_music_list()
-                    self.log.info(f"[自动追加] ✓ 成功追加 {len(converted_music_list)} 首歌曲到播放列表")
-                    # 更新播放列表
-                    self.update_playlist()
+                self.log.info(f"[自动追加] 搜索到 {len(song_list)} 首歌曲，准备去重")
+                
+                # 获取当前播放列表中已有的歌曲（用于去重）
+                current_songs = set()
+                for song_name in self._play_list:
+                    current_songs.add(song_name.lower())
+                
+                self.log.info(f"[自动追加] 当前播放列表中已有 {len(current_songs)} 首歌曲")
+                
+                # 过滤掉已经在播放列表中的歌曲
+                new_songs = []
+                for song in song_list:
+                    song_title = song.get("title", "").lower()
+                    song_artist = song.get("artist", "").lower()
+                    song_key = f"{song_title}-{song_artist}"
+                    
+                    # 检查是否已在播放列表中
+                    is_duplicate = False
+                    for existing_song in self._play_list:
+                        existing_key = existing_song.lower()
+                        if song_key in existing_key or existing_song.lower() in song_key:
+                            is_duplicate = True
+                            break
+                    
+                    if not is_duplicate:
+                        new_songs.append(song)
+                        self.log.debug(f"[自动追加] ✓ 新歌曲: '{song_title}' - '{song_artist}'")
+                    else:
+                        self.log.debug(f"[自动追加] ✗ 重复歌曲: '{song_title}' - '{song_artist}'，已跳过")
+                
+                if new_songs:
+                    self.log.info(f"[自动追加] ✓ 过滤后得到 {len(new_songs)} 首新歌曲，准备追加到播放列表")
+                    # 转换歌曲格式并追加到播放列表
+                    converted_music_list = self.xiaomusic.online_music_service._convert_song_list_to_music_items(new_songs)
+                    if converted_music_list:
+                        music_library = self.xiaomusic.music_library
+                        # 追加到现有歌单（append=True）
+                        music_library.update_music_list_json(list_name, converted_music_list, append=True)
+                        music_library.gen_all_music_list()
+                        self.log.info(f"[自动追加] ✓ 成功追加 {len(converted_music_list)} 首新歌曲到播放列表")
+                        # 更新播放列表
+                        self.update_playlist()
+                else:
+                    self.log.warning(f"[自动追加] ⚠ 搜索结果全部重复，没有新歌曲可追加")
             else:
                 self.log.warning(f"[自动追加] ✗ 搜索失败或无结果")
         except asyncio.CancelledError:
